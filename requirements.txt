@@ -1,6 +1,6 @@
-pandas 
-numpy 
-matplotlib 
+pandas
+numpy
+matplotlib
 seaborn
 plotly
 missingno
