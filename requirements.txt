@@ -1,5 +1,4 @@
 pandas
-tqdm
 numpy
 matplotlib
 seaborn
@@ -7,3 +6,4 @@ plotly
 missingno
 scipy
 scikit-learn
+tqdm
