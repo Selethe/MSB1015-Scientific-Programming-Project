@@ -7,3 +7,4 @@ missingno
 scipy
 scikit-learn
 tqdm
+kaleido
