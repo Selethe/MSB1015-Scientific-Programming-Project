@@ -7,3 +7,5 @@ The study tries to find the efficacy of using the tunable Q-factor wavelet trans
 ## The use of these files.
 The original CSV file is the pd_speech_features.csv. This file will be first loaded Datachecking.ipynb, where it is cleaned and saved as the outliercorrected_pd_speech_features.csv. This new file will be used in the Classification.ipynb, where the actual classification algorithm is stored and the model validation is done.
 
+### PKL files.
+The pickle files are saved variables from the classification file since some steps take 10-15 minutes to process. To see the full extend of these steps delete them before running the code.
