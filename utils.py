@@ -1,9 +1,9 @@
 # Data manipulation and analysis
 import pandas as pd
 import numpy as np
-import csv
 from collections import Counter
 from math import sqrt
+import csv
 import os
 from itertools import combinations
 
@@ -11,9 +11,12 @@ from itertools import combinations
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# Statistical analysis
+from scipy import stats
+
 # Machine learning libraries
 from sklearn.preprocessing import StandardScaler, Normalizer
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
@@ -25,23 +28,24 @@ from sklearn.metrics import (
     auc
 )
 from sklearn.feature_selection import SelectKBest, f_classif
-import pandas as pd
-import numpy as np
-from scipy import stats
-import matplotlib.pyplot as plt
-import seaborn as sns
-# Data manipulation and analysis
-import pandas as pd
-import numpy as np
-import csv
-import os
-import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy import stats
-from sklearn.ensemble import IsolationForest
 
+def jackknife_feature_selection(X: pd.DataFrame, y: pd.Series, n_features_to_select: int = 10, n_estimators: int = 100) -> list:
+    """
+    Perform jackknife feature selection using ANOVA F-value for feature ranking.
 
-def jackknife_feature_selection(X, y, n_features_to_select=10, n_estimators=100):
+    Parameters:
+    - X (pd.DataFrame): Feature set, can be multi-indexed
+    - y (pd.Series or array-like): Target variable
+    - n_features_to_select (int, optional): Number of top features to select. Defaults to 10.
+    - n_estimators (int, optional): Not used in this implementation, kept for consistency. Defaults to 100.
+
+    Returns:
+    - list: Names of the selected features
+
+    This function implements a jackknife procedure for feature selection. It iteratively removes
+    one sample, ranks features using ANOVA F-test, and counts how often each feature is selected.
+    The top features are then returned based on their selection frequency.
+    """
     # Convert multi-indexed DataFrame to numpy array
     X_train = X.values
     y_train = y.values if isinstance(y, pd.Series) else y
@@ -54,7 +58,7 @@ def jackknife_feature_selection(X, y, n_features_to_select=10, n_estimators=100)
         X_train_jackknife = np.delete(X_train, i, axis=0)
         y_train_jackknife = np.delete(y_train, i)
         
-        # Rank features
+        # Rank features using ANOVA F-test
         selector = SelectKBest(f_classif, k=n_features_to_select)
         selector.fit(X_train_jackknife, y_train_jackknife)
         
@@ -64,7 +68,7 @@ def jackknife_feature_selection(X, y, n_features_to_select=10, n_estimators=100)
         # Update feature counts
         feature_counts.update(selected_features)
     
-    # Get top features
+    # Get top features based on selection frequency
     top_features = [feature for feature, count in feature_counts.most_common(n_features_to_select)]
     
     # Map feature indices back to column names
@@ -73,18 +77,56 @@ def jackknife_feature_selection(X, y, n_features_to_select=10, n_estimators=100)
     
     return selected_feature_names
 
-def evaluate_feature_subset(X_train, X_test, y_train, y_test, feature_subset, n_estimators=100):
+def evaluate_feature_subset(X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series, 
+                            feature_subset: list, n_estimators: int = 100) -> float:
+    """
+    Evaluate a subset of features using a Random Forest Classifier.
+
+    Parameters:
+    - X_train (pd.DataFrame): Training feature set
+    - X_test (pd.DataFrame): Test feature set
+    - y_train (pd.Series): Training target variable
+    - y_test (pd.Series): Test target variable
+    - feature_subset (list): List of feature names to evaluate
+    - n_estimators (int, optional): Number of trees in the Random Forest. Defaults to 100.
+
+    Returns:
+    - float: Accuracy score of the Random Forest Classifier on the test set
+
+    This function trains a Random Forest Classifier on the specified subset of features
+    and evaluates its performance on the test set.
+    """
     # Select features from multi-indexed DataFrame
     X_subset = X_train[feature_subset]
     X_test_subset = X_test[feature_subset]
     
+    # Initialize and train the Random Forest Classifier
     rf = RandomForestClassifier(n_estimators=n_estimators, random_state=42, n_jobs=-1)
     rf.fit(X_subset, y_train)
     
+    # Evaluate the model on the test set
     accuracy = rf.score(X_test_subset, y_test)
     return accuracy
 
-def feature_selection_and_evaluation(X_train, X_val, y_train, y_val, n_features_to_select, n_estimators):
+def feature_selection_and_evaluation(X_train: pd.DataFrame, X_val: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, 
+                                     n_features_to_select: int, n_estimators: int) -> pd.DataFrame:
+    """
+    Perform feature selection using jackknife method and evaluate the selected feature subset.
+
+    Parameters:
+    - X_train (pd.DataFrame): Training feature set
+    - X_val (pd.DataFrame): Validation feature set
+    - y_train (pd.Series): Training target variable
+    - y_val (pd.Series): Validation target variable
+    - n_features_to_select (int): Number of features to select
+    - n_estimators (int): Number of estimators for the Random Forest classifier
+
+    Returns:
+    - pd.DataFrame: A DataFrame summarizing the results of feature selection and evaluation
+
+    This function performs jackknife feature selection, evaluates the selected feature subset,
+    compares it with using all features, and returns a summary of the results.
+    """
     # Perform jackknife feature selection
     selected_features = jackknife_feature_selection(X_train, y_train, n_features_to_select=n_features_to_select, n_estimators=n_estimators)
     print("Selected features:", selected_features)
@@ -99,39 +141,72 @@ def feature_selection_and_evaluation(X_train, X_val, y_train, y_val, n_features_
 
     # Create a summary DataFrame
     result_df = pd.DataFrame({
-        'Number of Estimators': n_estimators,
-        'Number of Selected Features': n_features_to_select,
-        'Accuracy with Selected Features': accuracy_selected,
-        'Accuracy with All Features': accuracy_all,
+        'Number of Estimators': [n_estimators],
+        'Number of Selected Features': [n_features_to_select],
+        'Accuracy with Selected Features': [accuracy_selected],
+        'Accuracy with All Features': [accuracy_all],
         'Selected Features': [selected_features]
     })
 
     return result_df
 
-def perform_anova(df, feature_columns, pd_column, gender_column):
+def perform_anova(df: pd.DataFrame, feature_columns: list, pd_column: str, gender_column: str) -> pd.DataFrame:
+    """
+    Perform one-way ANOVA for each feature, separated by gender, to compare Parkinson's and non-Parkinson's groups.
+
+    Parameters:
+    - df (pd.DataFrame): The input DataFrame containing the data
+    - feature_columns (list): List of feature column names to analyze
+    - pd_column (str): Name of the column indicating Parkinson's Disease status (1 for PD, 0 for non-PD)
+    - gender_column (str): Name of the column indicating gender (0 for Female, 1 for Male)
+
+    Returns:
+    - pd.DataFrame: A DataFrame containing ANOVA results with columns 'Feature', 'Gender', 'F-value', and 'p-value'
+
+    This function performs a one-way ANOVA for each feature in feature_columns, separately for each gender,
+    comparing the Parkinson's Disease group with the non-Parkinson's Disease group.
+    """
     results = []
     for feature in feature_columns:
         for gender in df[gender_column].unique():
+            # Subset data for the current gender
             feature_data = df[df[gender_column] == gender]
             
+            # Separate PD and non-PD groups
             pd_group = feature_data[feature_data[pd_column] == 1][feature]
             non_pd_group = feature_data[feature_data[pd_column] == 0][feature]
             
+            # Perform one-way ANOVA
             f_value, p_value = stats.f_oneway(pd_group, non_pd_group)
-            if gender == 0:
-                gender = 'Female'
-            else:
-                gender = 'Male'
+            
+            # Convert gender code to string label
+            gender_label = 'Female' if gender == 0 else 'Male'
+            
+            # Store results
             results.append({
                 'Feature': feature,
-                'Gender': gender,
+                'Gender': gender_label,
                 'F-value': f_value,
                 'p-value': p_value
             })
     
+    # Convert results to DataFrame and return
     return pd.DataFrame(results)
 
-def plot_feature_distributions(df, feature_columns, pd_column, gender_column, anova_results):
+def plot_feature_distributions(df: pd.DataFrame, feature_columns: list, pd_column: str, gender_column: str, anova_results: pd.DataFrame) -> None:
+    """
+    Plot feature distributions by Parkinson's Disease status and gender using violin plots.
+
+    Parameters:
+    - df (pd.DataFrame): The input DataFrame containing the data
+    - feature_columns (list): List of feature column names to plot
+    - pd_column (str): Name of the column indicating Parkinson's Disease status (0 for Healthy, 1 for Parkinson's)
+    - gender_column (str): Name of the column indicating gender (0 for Female, 1 for Male)
+    - anova_results (pd.DataFrame): DataFrame containing ANOVA results with 'Feature' and 'p-value' columns
+
+    Returns:
+    - None: Displays the plot grid
+    """
     n_features = len(feature_columns)
     n_cols = 3
     n_rows = (n_features - 1) // n_cols + 1
@@ -142,16 +217,6 @@ def plot_feature_distributions(df, feature_columns, pd_column, gender_column, an
     gender_map = lambda x: 'Female' if x == 0 else 'Male'
     pd_map = lambda x: 'Healthy' if x == 0 else 'Parkinson'
 
-    def add_stars(p_value):
-        if p_value < 0.001:
-            return '***'
-        elif p_value < 0.01:
-            return '**'
-        elif p_value < 0.05:
-            return '*'
-        else:
-            return ''
-
     for i, feature in enumerate(feature_columns):
         ax = axes[i // n_cols, i % n_cols]
         
@@ -160,28 +225,21 @@ def plot_feature_distributions(df, feature_columns, pd_column, gender_column, an
         plot_df[gender_column] = plot_df[gender_column].map(gender_map)
         plot_df[pd_column] = plot_df[pd_column].map(pd_map)
         
+        # Create violin plot
         sns.violinplot(x=gender_column, y=feature, hue=pd_column, 
                        data=plot_df, split=True, inner="box", ax=ax)
         
-        # Add stars if p-value is significant
+        # Get p-value from ANOVA results
         p_value = anova_results.loc[anova_results['Feature'] == str(feature), 'p-value'].values[0]
-        stars = add_stars(p_value)
-        
-        if stars:
-            y_max = plot_df[feature].max()
-            y_range = plot_df[feature].max() - plot_df[feature].min()
-            y_pos = y_max + 0.15 * y_range
-            
-            ax.text(0, y_pos, stars, ha='center', va='bottom')
-            ax.text(1, y_pos, stars, ha='center', va='bottom')
-        
+
+        # Set plot title and labels
         ax.set_title(feature)
         ax.set_xlabel('')
         if i % n_cols != 0:
             ax.set_ylabel('')
         
         # Adjust legend
-        if i % 3 == 0:  # Only show legend for the first plot
+        if i % 3 == 0:  # Only show legend for the first plot in each row
             ax.legend(title='Status')
         else:
             ax.get_legend().remove()
@@ -190,6 +248,7 @@ def plot_feature_distributions(df, feature_columns, pd_column, gender_column, an
     for j in range(i+1, n_rows*n_cols):
         fig.delaxes(axes[j // n_cols, j % n_cols])
 
+    # Set overall title
     fig.suptitle('Feature Distributions by PD Status and Gender', fontsize=16, y=1.0)
 
     plt.tight_layout()
@@ -199,25 +258,29 @@ def plot_feature_distributions(df, feature_columns, pd_column, gender_column, an
 def fill_empty_with_previous(lst: list[str]) -> list[str]:
     """Fills empty strings in the list with the last non-empty value.
 
-    Args: lst (list[str]): A list of strings where some elements may be empty strings ('').
+    Args:
+        lst (list[str]): A list of strings where some elements may be empty strings ('').
 
-    Returns: list[str]: The modified list where empty strings are replaced by the last non-empty value.
+    Returns:
+        list[str]: The modified list where empty strings are replaced by the last non-empty value.
     
     Example:
         fill_empty_with_previous(['','a', '', 'b', '', '']) -> ['','a', 'a', 'b', 'b', 'b']
     """
-    last_value = ''  # Stores the last non-empty string encountered
+    last_value = ''  # Initialize variable to store the last non-empty string encountered
 
     for index, item in enumerate(lst):
-        # Skip processing for the last item in the list, for the pd_speech_features dataset this is to avoid labelling class
+        # Skip processing for the last item in the list
+        # This is specific to the pd_speech_features dataset to avoid labelling the class
         if index == len(lst) - 1:
             continue
 
-        # Update last_value if the current item is not empty
+        # If the current item is not empty, update last_value
         elif item != '':
             last_value = item
+        
+        # If the current item is empty, replace it with last_value
         else:
-            # Replace empty string with the last non-empty value
             lst[index] = last_value
 
     return lst
@@ -226,31 +289,35 @@ def plot_missing_values_by_class(df: pd.DataFrame, class_column: str, labels: li
     """
     Plots a heatmap of the percentage of missing values for each feature, grouped by a specified class column.
 
-    Args:
-        df (pd.DataFrame): The input dataframe containing the data.
-        class_column (str): The name of the column in `df` to group by (i.e., the class).
-        labels (list, optional): A list of labels for the y-axis (class labels). Defaults to an empty list.
+    Parameters:
+    - df (pd.DataFrame): The input dataframe containing the data
+    - class_column (str): The name of the column in `df` to group by (i.e., the class)
+    - labels (list, optional): A list of labels for the y-axis (class labels). Defaults to an empty list
 
     Returns:
-        None: The function generates and displays a heatmap plot.
-    
+    - None: The function generates and displays a heatmap plot
+
     Raises:
-        ValueError: If the class_column does not exist in the dataframe.
-    
+    - ValueError: If the class_column does not exist in the dataframe
+
     Example:
-        plot_missing_values_by_class(df, 'Gender', ['female', 'Male',])
+        plot_missing_values_by_class(df, 'Gender', ['Female', 'Male'])
     """
+    # Check if class_column exists in the DataFrame
+    if class_column not in df.columns:
+        raise ValueError(f"'{class_column}' does not exist in the dataframe.")
+
     # Calculate percentage of missing values for each feature and class
     missing_percentages = df.groupby(class_column).apply(lambda x: x.isnull().mean())
     
     # Create the heatmap
     plt.figure(figsize=(12, 8))  # Set figure size
     heatmap = sns.heatmap(missing_percentages, 
-                           cmap='YlOrRd',  # Color map for the heatmap
-                           cbar_kws={'label': 'Percentage of Missing Values', 
-                                      'ticks': [0, 100, 4],  # Set ticks on the color bar
-                                      'format': '%.2f'})  # Format for color bar ticks
-    plt.title('Missing Values by Class')  # Set title for the figure
+                          cmap='YlOrRd',  # Color map for the heatmap
+                          cbar_kws={'label': 'Percentage of Missing Values', 
+                                    'format': '%.2f'})  # Format for color bar ticks
+    
+    plt.title(f'Missing Values by {class_column}')  # Set title for the figure
     
     # Add custom y-axis labels if provided
     if labels:
@@ -258,33 +325,36 @@ def plot_missing_values_by_class(df: pd.DataFrame, class_column: str, labels: li
 
     # Customize the color bar
     colorbar = heatmap.collections[0].colorbar
-    colorbar.set_ticks([0, missing_percentages.values.max(), 1])  # Set tick positions on the color bar
-    colorbar.set_ticklabels(['0%', f'{missing_percentages.values.max()*100:.0f}%', '100%'])  # Set tick labels
-    heatmap.set(title=f"Missing values per {class_column[1]}", xlabel="Feature", ylabel=f"{class_column[1]}")  # Set axis labels
+    max_percentage = missing_percentages.values.max()
+    colorbar.set_ticks([0, max_percentage, 1])  # Set tick positions on the color bar
+    colorbar.set_ticklabels(['0%', f'{max_percentage*100:.0f}%', '100%'])  # Set tick labels
+
+    # Set axis labels
+    heatmap.set(xlabel="Feature", ylabel=class_column)
+
     plt.show()  # Display the plot
 
-    
-def analyze_missing_values_by_class(df: pd.DataFrame, class_column: set) -> None:
+
+def analyze_missing_values_by_class(df: pd.DataFrame, class_column: str) -> None:
     """
     Analyzes missing values in a DataFrame by class and performs statistical tests.
 
-    Args:
-        df (pd.DataFrame): Input DataFrame containing the data.
-        class_column (str): Name of the column to group by (i.e., the class).
+    Parameters:
+    - df (pd.DataFrame): Input DataFrame containing the data
+    - class_column (str): Name of the column to group by (i.e., the class)
 
     Returns:
-        None: Prints disparity in missing values and significant relationships.
+    - None: Prints disparity in missing values and significant relationships
 
     Raises:
-        ValueError: If class_column does not exist in the dataframe.
-
-    Expected types:
-        df (pd.DataFrame): pandas DataFrame
-        class_column (str): string representing the class column name
+    - ValueError: If class_column does not exist in the dataframe
 
     Example:
         analyze_missing_values_by_class(df, 'Gender')
     """
+    # Check if class_column exists in the DataFrame
+    if class_column not in df.columns:
+        raise ValueError(f"'{class_column}' does not exist in the dataframe.")
     
     # Calculate percentage of missing values for each feature and class
     missing_by_class = df.groupby(class_column).apply(lambda x: x.isnull().mean())
@@ -292,7 +362,7 @@ def analyze_missing_values_by_class(df: pd.DataFrame, class_column: set) -> None
     # Calculate the difference in missing value percentages between classes
     class_disparity = missing_by_class.diff().iloc[-1].abs().sort_values(ascending=False)
     
-    print(f"Disparity in missing values between {class_column[1]}:")
+    print(f"Disparity in missing values between {class_column} classes:")
     display(class_disparity)
     
     # Perform chi-square test for independence
@@ -305,58 +375,71 @@ def analyze_missing_values_by_class(df: pd.DataFrame, class_column: set) -> None
                 print(f"Chi-square statistic: {chi2:.2f}")
                 print(f"p-value: {p_value:.4f}")
 
-                
-def plot_missing_values_distribution(df: pd.DataFrame, axes: int=0) -> None:
+
+def plot_missing_values_distribution(df: pd.DataFrame, axes: int = 0) -> None:
     """
     Plots the distribution of missing values for rows or columns in a DataFrame.
 
-    Args:
-        df (pd.DataFrame): Input DataFrame containing the data.
-        axes (int): Axis along which to calculate missing values. 
-                                         1 for rows, 0 for columns. Defaults to 0 (columns).
+    Parameters:
+    - df (pd.DataFrame): Input DataFrame containing the data
+    - axes (int): Axis along which to calculate missing values. 
+                  0 for columns, 1 for rows. Defaults to 0 (columns)
 
     Returns:
-        None: Displays the histogram plot.
+    - None: Displays the histogram plot
 
     Example:
-        # Plot missing values distribution per row
+        # Plot missing values distribution per column
         plot_missing_values_distribution(df, axes=0)
         
-        # Plot missing values distribution per column
-        plot_missing_values_distribution(df, axes='columns')
+        # Plot missing values distribution per row
+        plot_missing_values_distribution(df, axes=1)
     """
     plt.figure(figsize=(10, 6))
-    if axes:
-        plt.hist(df.isnull().sum(axis=1), bins=20)
-    else:
-        plt.hist(df.isnull().sum(), bins=20)
     
-    plt.xlim(0)
-    if axes:
-        plt.title(f'Distribution of Missing Values per Rows')
+    # Calculate missing values
+    if axes == 1:
+        missing_counts = df.isnull().sum(axis=1)
+        title = 'Distribution of Missing Values per Row'
+    elif axes == 0:
+        missing_counts = df.isnull().sum()
+        title = 'Distribution of Missing Values per Column'
     else:
-        plt.title(f'Distribution of Missing Values per Column')
+        raise ValueError("axes must be 0 for columns or 1 for rows")
+
+    # Plot histogram
+    plt.hist(missing_counts, bins=20)
+    
+    # Set plot attributes
+    plt.xlim(0)
+    plt.title(title)
     plt.xlabel('Number of Missing Values')
     plt.ylabel('Frequency')
+    
+    # Display the plot
     plt.show()
                 
-def fill_missing_values(df: pd.DataFrame, columns: list[str], method:str='mean')->  pd.DataFrame:
+def fill_missing_values(df: pd.DataFrame, columns: list[str], method: str = 'mean') -> pd.DataFrame:
     """
     Fills missing values in one or more specified columns of a DataFrame using the mean, median, or mode.
     
     Parameters:
-    - df (pd.DataFrame): The input DataFrame.
-    - columns (str or list): The column name or list of column names in which to fill missing values.
-    - method (str): The method to fill missing values: 'mean', 'median', or 'mode'. Default is 'mean'.
+    - df (pd.DataFrame): The input DataFrame
+    - columns (list[str]): List of column names in which to fill missing values
+    - method (str): The method to fill missing values: 'mean', 'median', or 'mode'. Default is 'mean'
     
     Returns:
-    - pd.DataFrame: A DataFrame with the missing values filled in the specified column(s).
+    - pd.DataFrame: A DataFrame with the missing values filled in the specified column(s)
+    
+    Raises:
+    - ValueError: If a specified column doesn't exist, if the method is invalid, or if mode can't be calculated
     """
     # Ensure that 'columns' is a list even if a single column is provided
     if isinstance(columns, str):
         columns = [columns]
     
     for column in columns:
+        # Check if the column exists in the DataFrame
         if column not in df.columns:
             raise ValueError(f"Column '{column}' does not exist in the DataFrame.")
         
@@ -379,7 +462,7 @@ def fill_missing_values(df: pd.DataFrame, columns: list[str], method:str='mean')
     
     return df
 
-def compute_proximity_matrix(forest:IsolationForest, X:np.ndarray) -> np.ndarray:
+def compute_proximity_matrix(forest: IsolationForest, X: np.ndarray) -> np.ndarray:
     """
     Compute the proximity matrix for an Isolation Forest.
 
@@ -388,13 +471,16 @@ def compute_proximity_matrix(forest:IsolationForest, X:np.ndarray) -> np.ndarray
     where these points end up in the same leaf node.
 
     Parameters:
-    forest (IsolationForest): A fitted Isolation Forest model.
-    X (array-like): The input samples, shape (n_samples, n_features).
+    - forest (IsolationForest): A fitted Isolation Forest model
+    - X (np.ndarray): The input samples, shape (n_samples, n_features)
 
     Returns:
-    numpy.ndarray: The proximity matrix, shape (n_samples, n_samples).
+    - np.ndarray: The proximity matrix, shape (n_samples, n_samples)
     """
+    # Get the number of samples
     n_samples = X.shape[0]
+    
+    # Initialize the proximity matrix with zeros
     proximity_matrix = np.zeros((n_samples, n_samples))
     
     # Iterate through each tree in the forest
@@ -408,14 +494,74 @@ def compute_proximity_matrix(forest:IsolationForest, X:np.ndarray) -> np.ndarray
                 # If two samples end up in the same leaf, increment their proximity
                 if leaves_index[i] == leaves_index[j]:
                     proximity_matrix[i, j] += 1
-                    proximity_matrix[j, i] += 1
+                    proximity_matrix[j, i] += 1  # Ensure symmetry of the matrix
     
     # Normalize the proximity matrix by the number of trees
     return proximity_matrix / len(forest.estimators_)
 
-def check_binary_column(column, column_name):
+def check_binary_column(column: pd.Series, column_name: str) -> None:
+    """
+    Check if a column contains only binary values (0 and 1).
+    
+    Parameters:
+    - column (pd.Series): The column to check
+    - column_name (str): The name of the column being checked
+    
+    Returns:
+    - None
+    
+    Raises:
+    - ValueError: If the column contains values other than 0 and 1
+    """
+    # Get unique values in the column
     unique_values = column.unique()
+    
+    # Check if all unique values are either 0 or 1
     if set(unique_values).issubset({0, 1}):
         print(f"{column_name} contains only 0 and 1.")
     else:
+        # Raise an error if other values are found
         raise ValueError(f"Error: {column_name} contains values other than 0 and 1: {unique_values}")
+
+def correct_outliers(df, columns, outlier_column, method='mean'):
+    """
+    Correct outliers in specified columns based on a boolean outlier indicator column.
+    
+    Parameters:
+    - df (pd.DataFrame): Input DataFrame
+    - columns (list): List of column names to correct
+    - outlier_column (str): Name of the boolean column indicating outliers (True for outliers)
+    - method (str): Method to use for correction ('mean', 'median', 'mode', or 'winsorize')
+    
+    Returns:
+    - pd.DataFrame: DataFrame with corrected outliers
+    """
+    df_corrected = df.copy()
+    
+    for column in columns:
+        if method == 'mean':
+            # Replace outliers with mean of non-outlier values
+            mean_value = df_corrected.loc[~df_corrected[outlier_column], column].mean()
+            df_corrected.loc[df_corrected[outlier_column], column] = mean_value
+        
+        elif method == 'median':
+            # Replace outliers with median of non-outlier values
+            median_value = df_corrected.loc[~df_corrected[outlier_column], column].median()
+            df_corrected.loc[df_corrected[outlier_column], column] = median_value
+        
+        elif method == 'mode':
+            # Replace outliers with mode of non-outlier values
+            mode_value = df_corrected.loc[~df_corrected[outlier_column], column].mode().iloc[0]
+            df_corrected.loc[df_corrected[outlier_column], column] = mode_value
+        
+        elif method == 'winsorize':
+            # Winsorize outliers to the nearest non-outlier value
+            sorted_values = df_corrected.loc[~df_corrected[outlier_column], column].sort_values()
+            lower_bound = sorted_values.iloc[5]
+            upper_bound = sorted_values.iloc[-5]
+            df_corrected.loc[df_corrected[outlier_column], column] = df_corrected.loc[df_corrected[outlier_column], column].clip(lower_bound, upper_bound)
+        
+        else:
+            raise ValueError("Invalid method. Choose 'mean', 'median', 'mode', or 'winsorize'.")
+    
+    return df_corrected
